@@ -4,21 +4,21 @@ Script that takes a cipher name as input and outputs useful information on that 
 
 Example
 <pre>
-./scomp.rb TLS_AES_128_CCM_8_SHA256
+./scomp.rb AES128-SHA
 </pre>
 
 Outputs:
 <pre>
-code: [0x1305]
-openssl_name: TLS_AES_128_CCM_8_SHA256
-iana_name: TLS_AES_128_CCM_8_SHA256
-kex: ECDH
-enc_algo: AESCCM8
+code: [0x2f]
+openssl_name: AES128-SHA
+iana_name: TLS_RSA_WITH_AES_128_CBC_SHA
+kex: RSA
+enc_algo: AES
 enc_algo_bits: 128
-hash_algorithm: SHA256
-tls_version: ["TLS1.3"]
-security: secure
-mozilla_classification: modern
+hash_algorithm: SHA
+tls_version: ["TLS1.0", "TLS1.1", "TLS1.2"]
+security: weak
+mozilla_classification: old
 </pre>
 
 Details are gathered from the following sources:
