@@ -61,6 +61,7 @@ if matches != {}
   matches.each do |_code, info|
     cipher_suite_url = "#{CIPHERSUITE_INFO_API_URL}#{info['iana_name']}/"
     cipher_info = JSON.parse(Net::HTTP.get(URI(cipher_suite_url)))
+    info['hash_algorithm'] = cipher_info[info['iana_name']]['hash_algorithm']
     info['tls_version'] = cipher_info[info['iana_name']]['tls_version']
     info['security'] = cipher_info[info['iana_name']]['security']
 
