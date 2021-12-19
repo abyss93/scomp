@@ -75,7 +75,10 @@ if matches != {}
         # why? https://wiki.openssl.org/index.php/TLS1.3#Ciphersuites and https://ssl-config.mozilla.org/guidelines/5.6.json
         # TLS1.3 only supports ephemeral diffie-hellman key exchange algo: https://www.a10networks.com/blog/key-differences-between-tls-1-2-and-tls-1-3/
         # and https://blog.cloudflare.com/rfc-8446-aka-tls-1-3/
-        info['mozilla_classification'] = 'modern'
+        #
+        # Ciphers like TLS_AES_128_CCM_8_SHA256 and TLS_AES_128_CCM_SHA256 are supported by TLS1.3 but not considered 'modern' by Mozilla
+        EXLUDED_CIPHERS = %w[TLS_AES_128_CCM_8_SHA256 TLS_AES_128_CCM_SHA256]
+        info['mozilla_classification'] = 'modern' unless EXLUDED_CIPHERS.include?(info['openssl_name'])
       end
       # some ciphers are considered for both Old and Intermediate configs, breaking here is considering the cipher intermediate
       break if info.key?('mozilla_classification')
