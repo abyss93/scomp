@@ -1,8 +1,11 @@
 #!/usr/bin/env ruby
-require 'open-uri'
+require 'net/http'
 require 'nokogiri'
+require 'json'
 
-CIPHERS_TABLE = 'https://testssl.sh/openssl-iana.mapping.html'.freeze
+TESTSSL_URL = URI('https://testssl.sh/openssl-iana.mapping.html').freeze
+MOZILLA_URL = 'https://ssl-config.mozilla.org/guidelines/5.6.json'.freeze
+CIPHERSUITE_INFO_API_URL = 'https://ciphersuite.info/api/cs/'.freeze
 CODE_INDEX = 0
 OPENSSL_NAME_INDEX = 1
 IANA_NAME_INDEX = 5
@@ -10,30 +13,77 @@ KEX_INDEX = 2
 ENC_INDEX = 3
 BITS_INDEX = 4
 
+def get_cipher_property(cipher_detail, property_index)
+  property_text = cipher_detail[property_index]
+  return property_text.text.strip unless property_text.nil?
+
+  ''
+end
+
+def display(cipher_details)
+  cipher_details.each do |k, v|
+    puts "#{k}: #{v}"
+  end
+end
+
 cipher_name = ARGV[0]
-ciphers = {}
+results = {}
 
-ciphers_site_parsed = Nokogiri::HTML.parse(URI.open(CIPHERS_TABLE))
-ciphers_rows = ciphers_site_parsed.css('tr')
-ciphers_rows.to_a.filter { |row| row.css('th').empty? == true }.each do |cipher_row_parsed|
-  cipher_row = cipher_row_parsed.css('td').to_a
+testssl_parsed = Nokogiri::HTML.parse(Net::HTTP.get(TESTSSL_URL))
+ciphers_list = testssl_parsed.css('tr')
+ciphers_list.to_a.filter { |cipher| cipher.css('th').empty? == true }.each do |cipher|
+  cipher_detail = cipher.css('td').to_a
 
-  openssl_name = cipher_row[OPENSSL_NAME_INDEX].text.strip unless cipher_row[OPENSSL_NAME_INDEX].nil?
-  iana_name = cipher_row[IANA_NAME_INDEX].text.strip unless cipher_row[IANA_NAME_INDEX].nil?
-  kex = cipher_row[KEX_INDEX].text.strip unless cipher_row[KEX_INDEX].nil?
-  enc_algo = cipher_row[ENC_INDEX].text.strip unless cipher_row[ENC_INDEX].nil?
-  bits = cipher_row[BITS_INDEX].text.strip unless cipher_row[BITS_INDEX].nil?
+  cipher_code = get_cipher_property(cipher_detail, CODE_INDEX)
+  openssl_name = get_cipher_property(cipher_detail, OPENSSL_NAME_INDEX)
+  iana_name = get_cipher_property(cipher_detail, IANA_NAME_INDEX)
+  kex = get_cipher_property(cipher_detail, KEX_INDEX)
+  enc_algo = get_cipher_property(cipher_detail, ENC_INDEX)
+  bits = get_cipher_property(cipher_detail, BITS_INDEX)
 
-  ciphers[cipher_row[CODE_INDEX].text] = {
+  results[cipher_code] = {
+    'code' => cipher_code,
     'openssl_name' => openssl_name,
     'iana_name' => iana_name,
     'kex' => kex,
     'enc_algo' => enc_algo,
-    'bits' => bits
+    'enc_algo_bits' => bits
   }
 end
 
-match = ciphers.filter { |code, info| info['openssl_name'] == cipher_name || info['iana_name'] == cipher_name }.first
-puts match unless match.nil?
+# find the searched cipher filtering the list by name
+matches = results.filter { |_code, info| info['openssl_name'] == cipher_name || info['iana_name'] == cipher_name }
+
+# enrichment from mozialla.org and ciphersuite.info
+if matches != {}
+  mozilla_configs = JSON.parse(Net::HTTP.get(URI(MOZILLA_URL)))
+
+  matches.each do |_code, info|
+    cipher_suite_url = "#{CIPHERSUITE_INFO_API_URL}#{info['iana_name']}/"
+    cipher_info = JSON.parse(Net::HTTP.get(URI(cipher_suite_url)))
+    info['tls_version'] = cipher_info[info['iana_name']]['tls_version']
+    info['security'] = cipher_info[info['iana_name']]['security']
+
+    mozilla_configs['configurations'].each do |config_type, config_details|
+      if !info['tls_version'].include?('TLS1.3')
+        # in case it is not TLS1.3 the config is either Old or Intermediate
+        config_details['ciphers']['openssl'].each do |cipher_name|
+          info['mozilla_classification'] = config_type if cipher_name == info['openssl_name']
+        end
+      else
+        # why? https://wiki.openssl.org/index.php/TLS1.3#Ciphersuites and https://ssl-config.mozilla.org/guidelines/5.6.json
+        # TLS1.3 only supports ephemeral diffie-hellman key exchange algo: https://www.a10networks.com/blog/key-differences-between-tls-1-2-and-tls-1-3/
+        # and https://blog.cloudflare.com/rfc-8446-aka-tls-1-3/
+        info['mozilla_classification'] = 'modern'
+      end
+      # some ciphers are considered for both Old and Intermediate configs, breaking here is considering the cipher intermediate
+      break if info.key?('mozilla_classification')
+    end
+
+    display(info)
+  end
+end
+
+
 
 
